@@ -70,22 +70,20 @@ if len(class_counts) < 2:
     st.stop()
 
 # ----- Split + Pipeline -----
-X, y = df[NUM + CAT], df[TARGET]
+from sklearn.model_selection import train_test_split
 
-preprocess = ColumnTransformer([
-    ("num", StandardScaler(), NUM),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), CAT)
-])
+TEST_SIZE = 0.25 if len(y) >= 40 else 0.33  # a bit larger test for very small sets
 
-pipe = Pipeline([("prep", preprocess),
-                 ("rf", RandomForestClassifier(n_estimators=200, random_state=42))])
-
-# Safe stratification: only if every class has >= 2 samples
-stratify_param = y if class_counts.min() >= 2 else None
-test_size = 0.25 if len(y) >= 12 else 0.33  # slightly larger test for very small datasets
-X_tr, X_te, y_tr, y_te = train_test_split(
-    X, y, test_size=test_size, random_state=42, stratify=stratify_param
-)
+try:
+    # Prefer stratified split
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=42, stratify=y
+    )
+except ValueError:
+    # Fallback when some classes have too few rows for stratify
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=42, stratify=None
+    )
 
 # ----- Train & Evaluate -----
 pipe.fit(X_tr, y_tr)
