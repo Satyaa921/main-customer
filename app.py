@@ -1,233 +1,269 @@
-import streamlit as st
+import io
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import streamlit as st
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestClassifier
+# ---------------- Page Setup ----------------
+st.set_page_config(page_title="Dubai Retail Intelligence", layout="wide")
+st.title("Dubai Retail Intelligence — Clean Operational Insights")
+st.caption("Demographics • Footfall • Dwell Time • Spend • Repeat Behavior → Practical, store-ready dashboards")
 
-# ---------------- PAGE SETUP ----------------
-st.set_page_config(page_title="Customer Type Detector", layout="centered")
-st.title("Retail Customer Type Detector")
-st.caption("Simple predictions with creative inputs designed for product & business teams.")
+# ---------------- Data Loading ----------------
+st.sidebar.header("Data")
+upl = st.sidebar.file_uploader("Upload CSV (recommended: regenerated_retail_dataset.csv)", type=["csv"])
 
-# ---------------- TRAIN A TINY MODEL IN-APP (keeps deployment simple) ----------------
-data = [
-    [6,12,0,0,"No","No","18-25","Bachelor","Low Spender"],
-    [8,18,1,25,"Yes","No","18-25","Bachelor","Low Spender"],
-    [14,35,2,110,"Yes","Yes","26-35","Family","Medium Buyer"],
-    [18,40,3,120,"No","Yes","26-35","Family","Medium Buyer"],
-    [22,55,3,220,"Yes","No","36-50","Couple","High Spender"],
-    [24,60,4,260,"No","Yes","36-50","Couple","High Spender"],
-    [30,90,5,420,"Yes","Yes","51+","Family","Premium Buyer"],
-    [28,85,4,350,"No","Yes","36-50","Family","Premium Buyer"],
-]
-cols = ["Dwell_Aisle_Min","Visit_Duration_Total_Min","Items_Purchased","Total_Spend",
-        "Discount_Used","Repeat_Visitor","Age_Group","Family_Status","Purchase_Type"]
-df = pd.DataFrame(data, columns=cols)
-
-NUM = ["Dwell_Aisle_Min","Visit_Duration_Total_Min","Items_Purchased","Total_Spend"]
-CAT = ["Discount_Used","Repeat_Visitor","Age_Group","Family_Status"]
-TARGET = "Purchase_Type"
-
-X, y = df[NUM + CAT], df[TARGET]
-preprocess = ColumnTransformer([
-    ("num", StandardScaler(), NUM),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), CAT),
-])
-model = Pipeline([("prep", preprocess),
-                  ("rf", RandomForestClassifier(n_estimators=150, random_state=42))])
-model.fit(X, y)
-
-# ---------------- HELPERS ----------------
-def predict_and_show(customer_row: pd.DataFrame, title="Customer Behavior"):
-    pred = model.predict(customer_row)[0]
-    st.success(f"Predicted Customer Type: {pred}")
-
-    # Visual 1: customer metrics
-    fig, ax = plt.subplots(figsize=(5,3))
-    metrics = [
-        customer_row.iloc[0]["Dwell_Aisle_Min"],
-        customer_row.iloc[0]["Visit_Duration_Total_Min"],
-        customer_row.iloc[0]["Items_Purchased"],
-        customer_row.iloc[0]["Total_Spend"],
+# Minimal Dubai-flavored sample (used only if no upload)
+def sample_bytes():
+    rows = [
+        # Section, Day, Time, Nationality, Age, Family, Resident, Repeat, Repeat_Freq, Items, Spend, Dwell, Cashier, Visit_Duration, Preferred_Item_Bucket
+        ["Women’s Wear","Friday","Night","India","26-35","Family","Resident","Yes",3,4,320,22,6,70,"Dresses"],
+        ["Men's Wear","Saturday","Afternoon","UAE","36-50","Couple","Resident","No",0,3,210,18,4,55,"Formalwear"],
+        ["Accessories","Thursday","Evening","Saudi Arabia","36-50","Family","Tourist","Yes",2,5,380,28,7,85,"Bags"],
+        ["Kids","Sunday","Morning","Egypt","26-35","Couple","Resident","Yes",5,2,120,14,3,35,"Kidswear"],
+        ["Women’s Wear","Thursday","Evening","Philippines","26-35","Family","Resident","Yes",4,3,150,16,4,40,"Dresses"],
+        ["Accessories","Tuesday","Afternoon","India","18-25","Bachelor","Tourist","No",0,0,0,8,2,18,"Accessories"],
+        ["Women’s Wear","Saturday","Evening","UAE","36-50","Family","Resident","Yes",1,4,260,20,5,60,"Dresses"],
+        ["Men's Wear","Monday","Evening","Pakistan","36-50","Couple","Resident","Yes",2,3,225,19,4,52,"Formalwear"],
+        ["Women’s Wear","Friday","Night","UK","51+","Family","Tourist","Yes",1,5,410,30,8,90,"Premium"],
+        ["Kids","Wednesday","Morning","India","18-25","Bachelor","Tourist","No",0,1,45,10,2,22,"Snacks"],
     ]
-    labels = ["Aisle Time", "Total Visit", "Items", "Spend"]
-    ax.bar(labels, metrics, color=["#4c72b0","#55a868","#c44e52","#8172b2"])
-    ax.set_ylabel("Value"); ax.set_title(title)
-    st.pyplot(fig)
+    cols = ["Section","Day_of_Week","Time_Band","Nationality","Age_Group","Family_Status","Resident_Type",
+            "Repeat_Visitor","Repeat_Frequency","Items_Purchased","Total_Spend","Dwell_Aisle_Min",
+            "Cashier_Time_Min","Visit_Duration_Total_Min","Preferred_Item_Bucket"]
+    df = pd.DataFrame(rows, columns=cols)
+    bio = io.BytesIO(); df.to_csv(bio, index=False); return bio.getvalue()
 
-    # Visual 2: dataset segment distribution (context)
-    st.write("Overall Customer Segment Distribution")
-    seg_counts = df[TARGET].value_counts()
-    fig2, ax2 = plt.subplots(figsize=(5,3))
-    seg_counts.plot(kind='bar', ax=ax2, color="#4c72b0")
-    ax2.set_ylabel("Customers"); ax2.set_xlabel("Type")
-    st.pyplot(fig2)
+if upl:
+    df = pd.read_csv(upl)
+else:
+    st.info("No file uploaded—showing demo with a small Dubai sample. Upload your enriched dataset for full power.")
+    df = pd.read_csv(io.BytesIO(sample_bytes()))
 
-# Default base values (used by all modes)
-BASE = {
-    "Dwell_Aisle_Min": 15,
-    "Visit_Duration_Total_Min": 45,
-    "Items_Purchased": 2,
-    "Total_Spend": 120,
-    "Discount_Used": "No",
-    "Repeat_Visitor": "No",
-    "Age_Group": "26-35",
-    "Family_Status": "Bachelor",
+# --------- Soft column mapping (works even if names slightly differ) ----------
+def pick(col_candidates):
+    for c in col_candidates:
+        if c in df.columns: return c
+    return None
+
+COLS = {
+    "Section"       : pick(["Section","Aisle_Section","Shop_Section"]),
+    "Day_of_Week"   : pick(["Day_of_Week","Visit_Day","Day"]),
+    "Time_Band"     : pick(["Time_Band","TimeBand"]),
+    "Nationality"   : pick(["Nationality","Country"]),
+    "Age_Group"     : pick(["Age_Group","AgeBucket"]),
+    "Gender"        : pick(["Gender"]),  # optional
+    "Family_Status" : pick(["Family_Status"]),
+    "Resident_Type" : pick(["Resident_Type"]),
+    "Repeat_Visitor": pick(["Repeat_Visitor"]),
+    "Repeat_Frequency": pick(["Repeat_Frequency","Repeat_Count"]),
+    "Items_Purchased": pick(["Items_Purchased","Items"]),
+    "Total_Spend"   : pick(["Total_Spend","Bill_Amount"]),
+    "Dwell_Aisle_Min": pick(["Dwell_Aisle_Min","Dwell_Time_Min"]),
+    "Cashier_Time_Min": pick(["Cashier_Time_Min","Checkout_Time_Min"]),
+    "Visit_Duration_Total_Min": pick(["Visit_Duration_Total_Min","Total_Visit_Min"]),
+    "Preferred_Item_Bucket": pick(["Preferred_Item_Bucket","Item_Bucket"])
 }
 
-# Preset personas (creative but simple starting points)
-PRESETS = {
-    "Window Shopper": {
-        "Dwell_Aisle_Min": 8, "Visit_Duration_Total_Min": 18, "Items_Purchased": 0, "Total_Spend": 0,
-        "Discount_Used": "No", "Repeat_Visitor": "No", "Age_Group": "18-25", "Family_Status": "Bachelor",
-    },
-    "Value Seeker": {
-        "Dwell_Aisle_Min": 16, "Visit_Duration_Total_Min": 38, "Items_Purchased": 2, "Total_Spend": 110,
-        "Discount_Used": "Yes", "Repeat_Visitor": "Yes", "Age_Group": "26-35", "Family_Status": "Family",
-    },
-    "Loyal Medium": {
-        "Dwell_Aisle_Min": 18, "Visit_Duration_Total_Min": 42, "Items_Purchased": 3, "Total_Spend": 150,
-        "Discount_Used": "No", "Repeat_Visitor": "Yes", "Age_Group": "36-50", "Family_Status": "Couple",
-    },
-    "Premium Family": {
-        "Dwell_Aisle_Min": 28, "Visit_Duration_Total_Min": 85, "Items_Purchased": 4, "Total_Spend": 360,
-        "Discount_Used": "Yes", "Repeat_Visitor": "Yes", "Age_Group": "36-50", "Family_Status": "Family",
-    },
-}
+# guard for required minimum set
+required_min = ["Section","Day_of_Week","Time_Band","Nationality","Age_Group","Family_Status",
+                "Resident_Type","Items_Purchased","Total_Spend","Dwell_Aisle_Min","Cashier_Time_Min"]
+missing = [k for k in required_min if COLS[k] is None]
+if missing:
+    st.error(f"Your data is missing required columns (or names differ too much): {missing}")
+    st.stop()
 
-# ---------------- INPUT MODES ----------------
-st.subheader("Input Modes")
-tab1, tab2, tab3 = st.tabs(["Quick Form", "Persona Presets", "What-If Compare"])
+# ---------- Filters (interactive, simple) ----------
+st.sidebar.header("Filters")
+countries = ["All"] + sorted(df[COLS["Nationality"]].dropna().unique().tolist())
+days      = ["All"] + ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+times     = ["All"] + ["Morning","Afternoon","Evening","Night"]
+sections  = ["All"] + sorted(df[COLS["Section"]].dropna().unique().tolist())
 
-# ---- Tab 1: Quick Form ----
-with tab1:
-    st.write("Enter details directly.")
-    c1, c2 = st.columns(2)
-    with c1:
-        dwell = st.slider("Minutes in one aisle", 0, 120, BASE["Dwell_Aisle_Min"])
-        total_dur = st.slider("Total visit duration (min)", 0, 240, BASE["Visit_Duration_Total_Min"])
-        items = st.number_input("Items purchased", 0, 20, BASE["Items_Purchased"])
-        spend = st.number_input("Total spend", 0, 1000, BASE["Total_Spend"], step=10)
-    with c2:
-        disc = st.selectbox("Discount used", ["Yes","No"], index=0 if BASE["Discount_Used"]=="Yes" else 1)
-        rep  = st.selectbox("Repeat visitor", ["Yes","No"], index=0 if BASE["Repeat_Visitor"]=="Yes" else 1)
-        age  = st.selectbox("Age group", ["18-25","26-35","36-50","51+"], index=["18-25","26-35","36-50","51+"].index(BASE["Age_Group"]))
-        fam  = st.selectbox("Family status", ["Bachelor","Couple","Family"], index=["Bachelor","Couple","Family"].index(BASE["Family_Status"]))
+f_country = st.sidebar.selectbox("Nationality", countries, index=0)
+f_day     = st.sidebar.selectbox("Day of Week", days, index=0)
+f_time    = st.sidebar.selectbox("Time Band", times, index=0)
+f_section = st.sidebar.selectbox("Section", sections, index=0)
 
-    customer1 = pd.DataFrame([{
-        "Dwell_Aisle_Min": dwell,
-        "Visit_Duration_Total_Min": total_dur,
-        "Items_Purchased": items,
-        "Total_Spend": spend,
-        "Discount_Used": disc,
-        "Repeat_Visitor": rep,
-        "Age_Group": age,
-        "Family_Status": fam
-    }])
+F = df.copy()
+if f_country != "All": F = F[F[COLS["Nationality"]]==f_country]
+if f_day != "All":     F = F[F[COLS["Day_of_Week"]]==f_day]
+if f_time != "All":    F = F[F[COLS["Time_Band"]]==f_time]
+if f_section != "All": F = F[F[COLS["Section"]]==f_section]
 
-    st.write("Input preview")
-    st.dataframe(customer1, use_container_width=True)
+if F.empty:
+    st.warning("No rows match current filters.")
+    st.stop()
 
-    if st.button("Predict (Quick Form)"):
-        predict_and_show(customer1, title="Current Customer Behavior")
+# ---------- KPI Cards ----------
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Visitors (rows)", f"{len(F):,}")
+k2.metric("Total Billing", f"{F[COLS['Total_Spend']].sum():,.0f}")
+k3.metric("Avg Dwell (min)", f"{F[COLS['Dwell_Aisle_Min']].mean():.1f}")
+k4.metric("Avg Cashier (min)", f"{F[COLS['Cashier_Time_Min']].mean():.1f}")
 
-# ---- Tab 2: Persona Presets ----
-with tab2:
-    st.write("Pick a preset and optionally tweak values.")
-    preset_name = st.selectbox("Preset persona", list(PRESETS.keys()))
-    preset = PRESETS[preset_name]
-
-    c1, c2 = st.columns(2)
-    with c1:
-        dwell2 = st.slider("Minutes in one aisle", 0, 120, preset["Dwell_Aisle_Min"])
-        total_dur2 = st.slider("Total visit duration (min)", 0, 240, preset["Visit_Duration_Total_Min"])
-        items2 = st.number_input("Items purchased", 0, 20, preset["Items_Purchased"], key="items2")
-        spend2 = st.number_input("Total spend", 0, 1000, preset["Total_Spend"], step=10, key="spend2")
-    with c2:
-        disc2 = st.selectbox("Discount used", ["Yes","No"], index=0 if preset["Discount_Used"]=="Yes" else 1, key="disc2")
-        rep2  = st.selectbox("Repeat visitor", ["Yes","No"], index=0 if preset["Repeat_Visitor"]=="Yes" else 1, key="rep2")
-        age2  = st.selectbox("Age group", ["18-25","26-35","36-50","51+"], index=["18-25","26-35","36-50","51+"].index(preset["Age_Group"]), key="age2")
-        fam2  = st.selectbox("Family status", ["Bachelor","Couple","Family"], index=["Bachelor","Couple","Family"].index(preset["Family_Status"]), key="fam2")
-
-    customer2 = pd.DataFrame([{
-        "Dwell_Aisle_Min": dwell2,
-        "Visit_Duration_Total_Min": total_dur2,
-        "Items_Purchased": items2,
-        "Total_Spend": spend2,
-        "Discount_Used": disc2,
-        "Repeat_Visitor": rep2,
-        "Age_Group": age2,
-        "Family_Status": fam2
-    }])
-
-    st.write("Input preview")
-    st.dataframe(customer2, use_container_width=True)
-
-    if st.button("Predict (Preset)"):
-        predict_and_show(customer2, title=f"{preset_name} (tweaked) Behavior")
-
-# ---- Tab 3: What-If Compare ----
-with tab3:
-    st.write("Compare two scenarios side by side to see how type changes.")
-    left, right = st.columns(2)
-
-    # Scenario A
-    with left:
-        st.markdown("Scenario A")
-        a_dwell = st.slider("A: Minutes in aisle", 0, 120, 12)
-        a_dur   = st.slider("A: Total duration", 0, 240, 30)
-        a_items = st.number_input("A: Items", 0, 20, 1, key="a_items")
-        a_spend = st.number_input("A: Spend", 0, 1000, 40, step=10, key="a_spend")
-        a_disc  = st.selectbox("A: Discount", ["Yes","No"], index=1, key="a_disc")
-        a_rep   = st.selectbox("A: Repeat", ["Yes","No"], index=1, key="a_rep")
-        a_age   = st.selectbox("A: Age", ["18-25","26-35","36-50","51+"], index=1, key="a_age")
-        a_fam   = st.selectbox("A: Family", ["Bachelor","Couple","Family"], index=0, key="a_fam")
-
-    # Scenario B
-    with right:
-        st.markdown("Scenario B")
-        b_dwell = st.slider("B: Minutes in aisle", 0, 120, 28)
-        b_dur   = st.slider("B: Total duration", 0, 240, 85)
-        b_items = st.number_input("B: Items", 0, 20, 4, key="b_items")
-        b_spend = st.number_input("B: Spend", 0, 1000, 360, step=10, key="b_spend")
-        b_disc  = st.selectbox("B: Discount", ["Yes","No"], index=0, key="b_disc")
-        b_rep   = st.selectbox("B: Repeat", ["Yes","No"], index=0, key="b_rep")
-        b_age   = st.selectbox("B: Age", ["18-25","26-35","36-50","51+"], index=2, key="b_age")
-        b_fam   = st.selectbox("B: Family", ["Bachelor","Couple","Family"], index=2, key="b_fam")
-
-    if st.button("Compare Scenarios"):
-        A = pd.DataFrame([{
-            "Dwell_Aisle_Min": a_dwell, "Visit_Duration_Total_Min": a_dur,
-            "Items_Purchased": a_items, "Total_Spend": a_spend,
-            "Discount_Used": a_disc, "Repeat_Visitor": a_rep, "Age_Group": a_age, "Family_Status": a_fam
-        }])
-        B = pd.DataFrame([{
-            "Dwell_Aisle_Min": b_dwell, "Visit_Duration_Total_Min": b_dur,
-            "Items_Purchased": b_items, "Total_Spend": b_spend,
-            "Discount_Used": b_disc, "Repeat_Visitor": b_rep, "Age_Group": b_age, "Family_Status": b_fam
-        }])
-
-        predA = model.predict(A)[0]
-        predB = model.predict(B)[0]
-
-        st.success(f"Scenario A → {predA}")
-        st.success(f"Scenario B → {predB}")
-
-        # Side-by-side visuals
-        vA, vB = st.columns(2)
-        with vA:
-            figA, axA = plt.subplots(figsize=(4,3))
-            axA.bar(["Aisle","Visit","Items","Spend"], [a_dwell,a_dur,a_items,a_spend], color="#55a868")
-            axA.set_title("Scenario A"); st.pyplot(figA)
-        with vB:
-            figB, axB = plt.subplots(figsize=(4,3))
-            axB.bar(["Aisle","Visit","Items","Spend"], [b_dwell,b_dur,b_items,b_spend], color="#4c72b0")
-            axB.set_title("Scenario B"); st.pyplot(figB)
-
-# Footer
 st.markdown("---")
-st.caption("Three input modes: Quick Form, Persona Presets, What-If Compare. Designed for clarity and business impact.")
+
+# ---------- Row 1: Demographics & Footfall ----------
+cA, cB, cC = st.columns(3)
+
+with cA:
+    st.subheader("Top Nationalities")
+    top_nat = F[COLS["Nationality"]].value_counts().head(5)
+    st.bar_chart(top_nat)
+
+with cB:
+    st.subheader("Footfall by Section")
+    sec_counts = F[COLS["Section"]].value_counts().sort_values(ascending=False)
+    st.bar_chart(sec_counts)
+
+with cC:
+    st.subheader("Peak Day & Time")
+    day_counts = F[COLS["Day_of_Week"]].value_counts().reindex(
+        ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]).dropna()
+    time_counts = F[COLS["Time_Band"]].value_counts().reindex(["Morning","Afternoon","Evening","Night"]).dropna()
+    st.write("By Day")
+    st.bar_chart(day_counts)
+    st.write("By Time")
+    st.bar_chart(time_counts)
+
+st.markdown("---")
+
+# ---------- Row 2: Dwell Analytics & Spend Linked ----------
+dA, dB, dC = st.columns(3)
+
+with dA:
+    st.subheader("Avg Dwell by Section")
+    dwell_sec = F.groupby(COLS["Section"])[COLS["Dwell_Aisle_Min"]].mean().sort_values(ascending=False).round(1)
+    st.bar_chart(dwell_sec)
+
+with dB:
+    st.subheader("Avg Cashier Time")
+    cashier_avg = F[COLS["Cashier_Time_Min"]].mean()
+    st.write(f"Average cashier time (min): **{cashier_avg:.1f}**")
+    # show per section too
+    cash_sec = F.groupby(COLS["Section"])[COLS["Cashier_Time_Min"]].mean().sort_values(ascending=False).round(1)
+    st.bar_chart(cash_sec)
+
+with dC:
+    st.subheader("Spend linked to Section & Time")
+    spend_sec = F.groupby(COLS["Section"])[COLS["Total_Spend"]].sum().sort_values(ascending=False)
+    st.write("Total Spend by Section")
+    st.bar_chart(spend_sec)
+    st.write("Avg Spend by Time Band")
+    spend_time = F.groupby(COLS["Time_Band"])[COLS["Total_Spend"]].mean().reindex(["Morning","Afternoon","Evening","Night"]).dropna().round(0)
+    st.bar_chart(spend_time)
+
+st.markdown("---")
+
+# ---------- Row 3: Who buys what (Families vs Bachelors) ----------
+wA, wB, wC = st.columns(3)
+
+with wA:
+    st.subheader("Age Groups")
+    st.bar_chart(F[COLS["Age_Group"]].value_counts())
+
+with wB:
+    st.subheader("Families vs Bachelors — Items")
+    fam_mask = F[COLS["Family_Status"]].isin(["Family","Couple"])
+    items_by_group = pd.Series({
+        "Families": F[fam_mask][COLS["Items_Purchased"]].mean() if fam_mask.any() else 0,
+        "Bachelors": F[~fam_mask][COLS["Items_Purchased"]].mean() if (~fam_mask).any() else 0
+    }).round(1)
+    st.bar_chart(items_by_group)
+
+with wC:
+    st.subheader("Popular Buckets (if present)")
+    if COLS["Preferred_Item_Bucket"] and COLS["Preferred_Item_Bucket"] in F.columns:
+        top_buckets = F[COLS["Preferred_Item_Bucket"]].value_counts().head(5)
+        st.bar_chart(top_buckets)
+    else:
+        st.write("No item bucket column found.")
+
+st.markdown("---")
+
+# ---------- Row 4: Repeat Behavior ----------
+rA, rB, rC = st.columns(3)
+
+with rA:
+    st.subheader("Repeat Visitors")
+    if COLS["Repeat_Visitor"] in F.columns:
+        repeat_counts = F[COLS["Repeat_Visitor"]].value_counts()
+        st.bar_chart(repeat_counts)
+    else:
+        st.write("No repeat column found.")
+
+with rB:
+    st.subheader("Repeat Frequency (avg)")
+    if COLS["Repeat_Frequency"] and COLS["Repeat_Frequency"] in F.columns:
+        st.write(f"Average repeat frequency: **{F[COLS['Repeat_Frequency']].astype(float).mean():.1f}** visits")
+    else:
+        st.write("Repeat frequency not available.")
+
+with rC:
+    st.subheader("Common Repeat Sections")
+    if COLS["Repeat_Visitor"] in F.columns:
+        repeats = F[F[COLS["Repeat_Visitor"]].astype(str).str.lower().isin(["yes","true","1"])]
+        if not repeats.empty:
+            st.bar_chart(repeats[COLS["Section"]].value_counts().head(5))
+        else:
+            st.write("No repeat visits in current filter.")
+    else:
+        st.write("No repeat column found.")
+
+st.markdown("---")
+
+# ---------- Manager Narrative (fills XXX / YYY / AAA / BBB / ZZZ / CCC / KKK) ----------
+st.subheader("One-click Manager Narrative")
+# Helper picks
+top_nat_name = F[COLS["Nationality"]].value_counts().idxmax()
+peak_day_name = F[COLS["Day_of_Week"]].value_counts().idxmax()
+peak_time_name = F[COLS["Time_Band"]].value_counts().idxmax()
+crowd_section  = F[COLS["Section"]].value_counts().idxmax()
+
+people_count = len(F)
+total_billing = F[COLS["Total_Spend"]].sum()
+
+# "XXX billed KKK amount": interpret as number of bills (non-zero spend) and amount spent by those
+billed_mask = F[COLS["Total_Spend"]] > 0
+billed_num  = int(billed_mask.sum())
+billed_amt  = float(F.loc[billed_mask, COLS["Total_Spend"]].sum())
+
+# Family vs bachelors product tendencies
+fam_mask = F[COLS["Family_Status"]].isin(["Family","Couple"])
+families_items = float(F.loc[fam_mask, COLS["Items_Purchased"]].mean()) if fam_mask.any() else 0
+bachelors_items = float(F.loc[~fam_mask, COLS["Items_Purchased"]].mean()) if (~fam_mask).any() else 0
+
+popular_family_section = (F.loc[fam_mask, COLS["Section"]].value_counts().idxmax()
+                          if fam_mask.any() else "N/A")
+popular_bachelor_section = (F.loc[~fam_mask, COLS["Section"]].value_counts().idxmax()
+                            if (~fam_mask).any() else "N/A")
+
+# Repeat visitors
+if COLS["Repeat_Visitor"] in F.columns:
+    repeat_mask = F[COLS["Repeat_Visitor"]].astype(str).str.lower().isin(["yes","true","1"])
+    repeat_num  = int(repeat_mask.sum())
+else:
+    repeat_num = 0
+
+if COLS["Repeat_Frequency"] and COLS["Repeat_Frequency"] in F.columns:
+    repeat_freq = F.loc[repeat_mask, COLS["Repeat_Frequency"]].astype(float).mean() if repeat_num>0 else 0.0
+else:
+    repeat_freq = 0.0
+
+st.write(
+    f"1. There were **{people_count}** people from **{top_nat_name}** visiting mostly on **{peak_day_name}** "
+    f"and **{peak_time_name}**. Most of them crowded the **{crowd_section}** section and total billing was "
+    f"**{total_billing:,.0f}**. Out of these, **{billed_num}** billed **{billed_amt:,.0f}**. "
+    f"The remainder were family members or window shoppers."
+)
+
+st.write(
+    f"2. The **{people_count}** people belonged to age groups like **"
+    f"{', '.join(F[COLS['Age_Group']].value_counts().index.tolist()[:3])}**. "
+    f"Families bought on average **{families_items:.1f}** items (often in **{popular_family_section}**), "
+    f"whereas bachelors bought **{bachelors_items:.1f}** items (often in **{popular_bachelor_section}**). "
+    f"Repeat visitors: **{repeat_num}**, visiting about **{repeat_freq:.1f}** times on average."
+)
+
+st.markdown("---")
+st.caption("Tip: Use the sidebar to filter by nationality, day, time, or section. All KPIs, charts, and the narrative update instantly.")
