@@ -1,9 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -12,19 +9,12 @@ from sklearn.ensemble import RandomForestClassifier
 
 # ---------------- PAGE SETUP ----------------
 st.set_page_config(page_title="Customer Type Detector", layout="centered")
-st.markdown("<h1 style='text-align:center; background: -webkit-linear-gradient(left, #00b4d8, #0077b6);"
-            "color:white; padding:10px;'>Retail Customer Intelligence Dashboard</h1>", unsafe_allow_html=True)
-
-st.markdown("""
-<div style='text-align:center; font-size:18px; color:#555;'>
-Enter customer details to predict their type and visualize their behavior <br>
-in an interactive, modern way.
-</div>
-""", unsafe_allow_html=True)
+st.title("Retail Customer Type Detector")
+st.markdown("Enter customer details to **predict customer type** and view simple insights for business decisions.")
 
 st.markdown("---")
 
-# ---------------- SAMPLE TRAINING DATA ----------------
+# ---------------- SAMPLE DATA FOR TRAINING ----------------
 data = [
     [6,12,0,0,"No","No","18-25","Bachelor","Low Spender"],
     [8,18,1,25,"Yes","No","18-25","Bachelor","Low Spender"],
@@ -39,29 +29,24 @@ columns = ["Dwell_Aisle_Min","Visit_Duration_Total_Min","Items_Purchased","Total
            "Discount_Used","Repeat_Visitor","Age_Group","Family_Status","Purchase_Type"]
 df = pd.DataFrame(data, columns=columns)
 
-# Feature columns
 NUM = ["Dwell_Aisle_Min","Visit_Duration_Total_Min","Items_Purchased","Total_Spend"]
 CAT = ["Discount_Used","Repeat_Visitor","Age_Group","Family_Status"]
 TARGET = "Purchase_Type"
 
+# Model setup
 X = df[NUM + CAT]
 y = df[TARGET]
-
-# ---------------- MODEL PIPELINE ----------------
 preprocess = ColumnTransformer([
     ("num", StandardScaler(), NUM),
     ("cat", OneHotEncoder(handle_unknown="ignore"), CAT)
 ])
-
 model = Pipeline([
     ("prep", preprocess),
-    ("rf", RandomForestClassifier(n_estimators=200, random_state=42))
+    ("rf", RandomForestClassifier(n_estimators=150, random_state=42))
 ])
-
-# Train model
 model.fit(X, y)
 
-# ---------------- USER INPUT FORM ----------------
+# ---------------- USER INPUT ----------------
 st.subheader("Enter Customer Details")
 
 c1, c2 = st.columns(2)
@@ -78,8 +63,9 @@ with c2:
 
 st.markdown("---")
 
-# ---------------- PREDICT BUTTON ----------------
+# ---------------- PREDICTION ----------------
 if st.button("Detect Customer Type"):
+    # Prepare input
     customer = pd.DataFrame([{
         "Dwell_Aisle_Min": dwell,
         "Visit_Duration_Total_Min": total_dur,
@@ -91,85 +77,44 @@ if st.button("Detect Customer Type"):
         "Family_Status": fam
     }])
 
-    # Prediction
-    proba = model.predict_proba(customer)[0]
+    # Predict
     pred = model.predict(customer)[0]
-    pred_prob = np.max(proba)
-
-    # ---------------- PROFILE CARD ----------------
-    st.markdown(f"""
-    <div style='background-color:#f0f8ff; border-radius:10px; padding:20px; text-align:center;'>
-        <h2 style='color:#0077b6;'>Predicted Customer Type</h2>
-        <h1 style='color:#023e8a;'>{pred}</h1>
-        <p style='font-size:18px; color:#555;'>Confidence Level: <b>{pred_prob*100:.1f}%</b></p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.success(f"**Predicted Customer Type:** {pred}")
 
     st.markdown("---")
+    st.subheader("Customer Behavior Summary")
+    
+    # ----------- VISUAL 1: CUSTOMER METRICS -----------
+    fig, ax = plt.subplots(figsize=(5,3))
+    metrics = [dwell, total_dur, items, spend]
+    labels = ["Aisle Time", "Total Visit", "Items", "Spend"]
+    ax.bar(labels, metrics, color=["#4c72b0","#55a868","#c44e52","#8172b2"])
+    ax.set_ylabel("Value")
+    ax.set_title("Current Customer Behavior")
+    st.pyplot(fig)
 
-    # ---------------- VISUAL 1: RADAR CHART ----------------
-    avg_profile = df[NUM].mean().values
-    user_profile = [dwell, total_dur, items, spend]
+    # ----------- VISUAL 2: DATASET SEGMENT DISTRIBUTION -----------
+    st.subheader("Overall Customer Segment Distribution")
+    seg_counts = df[TARGET].value_counts()
+    fig2, ax2 = plt.subplots(figsize=(5,3))
+    seg_counts.plot(kind='bar', ax=ax2, color="#4c72b0")
+    ax2.set_ylabel("Number of Customers")
+    ax2.set_xlabel("Customer Type")
+    ax2.set_title("Distribution of All Customer Types")
+    st.pyplot(fig2)
 
-    radar_categories = NUM
-    fig_radar = go.Figure()
-    fig_radar.add_trace(go.Scatterpolar(
-        r=user_profile,
-        theta=radar_categories,
-        fill='toself',
-        name='Current Customer',
-        line=dict(color='blue')
-    ))
-    fig_radar.add_trace(go.Scatterpolar(
-        r=avg_profile,
-        theta=radar_categories,
-        fill='toself',
-        name='Average Customer',
-        line=dict(color='orange')
-    ))
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True)),
-        showlegend=True,
-        title="Customer Behavior vs Average"
-    )
-    st.plotly_chart(fig_radar, use_container_width=True)
-
-    # ---------------- VISUAL 2: CONFIDENCE GAUGE ----------------
-    gauge_fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=pred_prob*100,
-        title={'text': "Prediction Confidence (%)"},
-        gauge={'axis': {'range': [0, 100]},
-               'bar': {'color': "darkblue"},
-               'steps': [
-                   {'range': [0, 50], 'color': "#ffcccc"},
-                   {'range': [50, 80], 'color': "#ffe680"},
-                   {'range': [80, 100], 'color': "#ccffcc"}
-               ]}
-    ))
-    st.plotly_chart(gauge_fig, use_container_width=True)
-
-    # ---------------- VISUAL 3: SEGMENT DISTRIBUTION ----------------
-    seg_counts = df[TARGET].value_counts().reset_index()
-    seg_counts.columns = ["Segment", "Count"]
-    pie_fig = px.pie(seg_counts, values="Count", names="Segment",
-                     title="Dataset-Wide Segment Distribution",
-                     color_discrete_sequence=px.colors.sequential.Blues)
-    st.plotly_chart(pie_fig, use_container_width=True)
-
-    # ---------------- INTERPRETATION ----------------
-    st.markdown("### Insight")
+    # ----------- BUSINESS INTERPRETATION -----------
+    st.markdown("### Business Insight")
     if pred == "Premium Buyer":
-        st.info("💡 **Premium Buyers** usually have **high spend and longer visit times**. "
-                "Consider offering exclusive loyalty rewards to retain them.")
+        st.info("Premium Buyers are highly engaged and spend a lot. "
+                "Consider offering **exclusive loyalty rewards** to retain them.")
     elif pred == "High Spender":
-        st.info("💡 **High Spenders** value deals and may respond well to targeted promotions.")
+        st.info("High Spenders value deals and can be targeted with **personalized promotions**.")
     elif pred == "Medium Buyer":
-        st.info("💡 **Medium Buyers** can be upsold by bundling products or offering time-limited discounts.")
+        st.info("Medium Buyers can be converted to high spenders by **bundling products** "
+                "or **time-limited discounts**.")
     else:
-        st.info("💡 **Low Spenders** may need personalized nudges to increase engagement, "
-                "like welcome offers or free shipping.")
+        st.info("Low Spenders may need **basic engagement campaigns**, such as welcome offers or free shipping.")
 
-# ---------------- FOOTER ----------------
 st.markdown("---")
-st.caption("Built with Streamlit • Plotly • Random Forest Model • Demo Dataset")
+st.caption("Built with Streamlit • Random Forest • Simple Visual Insights")
