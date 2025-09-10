@@ -1,4 +1,5 @@
 import io
+import datetime as dt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -12,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 # ====================== PAGE ======================
 st.set_page_config(page_title="Dubai Retail – Customer Type & Insights", layout="centered")
 st.title("Dubai Retail — Customer Type & Operational Insights")
-st.caption("Enter a shopper’s details → get predicted type, benchmarks, and visuals managers can act on.")
+st.caption("Enter a shopper’s details → get predicted type, what-if, and visuals managers can act on.")
 
 st.markdown("---")
 
@@ -76,10 +77,10 @@ MAP = {
     "Type": pick(logs, ["Purchase_Type","Segment"])
 }
 
-REQUIRED = ["Dwell","Cashier","Visit","Items","Spend","Discount","Repeat","Age","Family","Resident","Nationality","Time","Day","Section","Type"]
+REQUIRED = ["Dwell","Cashier","Visit","Items","Spend","Discount","Repeat","Age","Family","Resident","Nationality","Gender","Time","Day","Section","Type"]
 if any(MAP[k] is None for k in REQUIRED):
     st.error("Your logs are missing required columns (or names differ too much). Expected: "
-             "dwell, cashier, visit, items, spend, discount, repeat, age, family, resident, nationality, time, day, section, type.")
+             "dwell, cashier, visit, items, spend, discount, repeat, age, family, resident, nationality, gender, time, day, section, type.")
     st.stop()
 
 # ====================== TRAIN MODEL IN-APP ======================
@@ -101,15 +102,10 @@ model.fit(X, y)
 # ====================== INPUTS ======================
 st.subheader("Enter Customer Details")
 
-NATIONS = sorted(logs[MAP["Nationality"]].dropna().unique().tolist())
-if not NATIONS:
-    NATIONS = ["UAE","India","Pakistan","Philippines","Saudi Arabia","Egypt","UK"]
-
+NATIONS = sorted(logs[MAP["Nationality"]].dropna().unique().tolist()) or ["UAE","India","Pakistan","Philippines","Saudi Arabia","Egypt","UK"]
 TIME_BANDS = ["Morning","Afternoon","Evening","Night"]
 DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
-SECTIONS = sorted(logs[MAP["Section"]].dropna().unique().tolist())
-if not SECTIONS:
-    SECTIONS = ["Men's Wear","Women’s Wear","Kids","Accessories"]
+SECTIONS = sorted(logs[MAP["Section"]].dropna().unique().tolist()) or ["Men's Wear","Women’s Wear","Kids","Accessories"]
 
 c1, c2 = st.columns(2)
 with c1:
@@ -132,46 +128,23 @@ with c2:
 
 st.markdown("---")
 
-# ====================== PREDICT ======================
+# ====================== PREDICT (ENHANCED + TABS) ======================
 if st.button("Detect Customer Type"):
     cust = pd.DataFrame([{
-        MAP["Dwell"]: dwell,
-        MAP["Cashier"]: cashier,
-        MAP["Visit"]: total_dur,
-        MAP["Items"]: items,
-        MAP["Spend"]: spend,
-        MAP["Discount"]: disc,
-        MAP["Repeat"]: repeat,
-        MAP["Age"]: age,
-        MAP["Family"]: fam,
-        MAP["Resident"]: resident,
-        MAP["Nationality"]: nation,
-        MAP["Gender"]: gender,
-        MAP["Time"]: timeband,
-        MAP["Day"]: day,
-        MAP["Section"]: section
+        MAP["Dwell"]: dwell, MAP["Cashier"]: cashier, MAP["Visit"]: total_dur,
+        MAP["Items"]: items, MAP["Spend"]: spend, MAP["Discount"]: disc, MAP["Repeat"]: repeat,
+        MAP["Age"]: age, MAP["Family"]: fam, MAP["Resident"]: resident, MAP["Nationality"]: nation,
+        MAP["Gender"]: gender, MAP["Time"]: timeband, MAP["Day"]: day, MAP["Section"]: section
     }])
 
     pred = model.predict(cust)[0]
-    proba = model.predict_proba(cust)[0]
-    conf = float(np.max(proba))
+    proba = model.predict_proba(cust)[0]; conf = float(np.max(proba))
 
     st.success(f"Predicted Customer Type: {pred}  |  Confidence: {conf*100:.1f}%")
 
-    # ---------- VISUAL 1: Behavior ----------
-    st.subheader("Customer Behavior")
-    fig, ax = plt.subplots(figsize=(5,3))
-    vals = [dwell, cashier, total_dur, items, spend]
-    labels = ["Aisle dwell", "Cashier time", "Total visit", "Items", "Spend"]
-    ax.bar(labels, vals, color=["#4c72b0","#55a868","#c44e52","#8172b2","#937860"])
-    ax.set_ylabel("Value")
-    ax.set_title("Single-visit behavior overview")
-    st.pyplot(fig)
-
-    # ---------- VISUAL 2: Benchmarks (Section / Section@Time) ----------
-    st.subheader("Benchmarks (for staffing & merchandising)")
+    # --- Benchmarks for deltas ---
     sec_df = logs[logs[MAP["Section"]] == section]
-    st_df = logs[(logs[MAP["Section"]] == section) & (logs[MAP["Time"]] == timeband)]
+    st_df  = logs[(logs[MAP["Section"]] == section) & (logs[MAP["Time"]] == timeband)]
 
     def mean_or_nan(d, col):
         try:
@@ -179,87 +152,168 @@ if st.button("Detect Customer Type"):
         except Exception:
             return float("nan")
 
-    bench = pd.DataFrame({
-        "Metric": ["Aisle dwell (min)", "Cashier (min)", "Total visit (min)", "Items", "Spend"],
-        "This Customer": [dwell, cashier, total_dur, items, spend],
-        f"{section} Avg": [
-            mean_or_nan(sec_df, MAP["Dwell"]),
-            mean_or_nan(sec_df, MAP["Cashier"]),
-            mean_or_nan(sec_df, MAP["Visit"]),
-            mean_or_nan(sec_df, MAP["Items"]),
-            mean_or_nan(sec_df, MAP["Spend"]),
-        ],
-        f"{section} @ {timeband} Avg": [
-            mean_or_nan(st_df, MAP["Dwell"]),
-            mean_or_nan(st_df, MAP["Cashier"]),
-            mean_or_nan(st_df, MAP["Visit"]),
-            mean_or_nan(st_df, MAP["Items"]),
-            mean_or_nan(st_df, MAP["Spend"]),
-        ],
-    })
-    st.dataframe(
-        bench.style.format({"This Customer": "{:.1f}",
-                            f"{section} Avg": "{:.1f}",
-                            f"{section} @ {timeband} Avg": "{:.1f}"}),
-        use_container_width=True
+    sec_avg = {
+        "dwell": mean_or_nan(sec_df, MAP["Dwell"]),
+        "cash":  mean_or_nan(sec_df, MAP["Cashier"]),
+        "visit": mean_or_nan(sec_df, MAP["Visit"]),
+        "items": mean_or_nan(sec_df, MAP["Items"]),
+        "spend": mean_or_nan(sec_df, MAP["Spend"]),
+    }
+
+    # ---------- Tabs: Results | What-If | Store Heatmap | Drivers | Save Scenario ----------
+    tab_res, tab_whatif, tab_heat, tab_drv, tab_save = st.tabs(
+        ["Results", "What-If", "Store Heatmap", "Drivers", "Save Scenario"]
     )
 
-    # ---------- VISUAL 3: Footfall Context ----------
-    st.subheader("Footfall by Section (recent logs)")
-    foot = logs[MAP["Section"]].value_counts().sort_values(ascending=False)
-    fig2, ax2 = plt.subplots(figsize=(5,3))
-    foot.plot(kind="bar", ax=ax2, color="#4c72b0")
-    ax2.set_xlabel("Section"); ax2.set_ylabel("Visitors"); ax2.set_title("Recent footfall by section")
-    st.pyplot(fig2)
+    # ========== Results ==========
+    with tab_res:
+        st.subheader("Customer Behavior")
+        fig, ax = plt.subplots(figsize=(5, 3))
+        vals = [dwell, cashier, total_dur, items, spend]
+        labels = ["Aisle dwell", "Cashier time", "Total visit", "Items", "Spend"]
+        ax.bar(labels, vals, color=["#4c72b0", "#55a868", "#c44e52", "#8172b2", "#937860"])
+        ax.set_ylabel("Value"); ax.set_title("Single-visit behavior overview")
+        st.pyplot(fig)
 
-    # ---------- Manager Narrative ----------
-    st.subheader("Manager Narrative")
-    top_nat = logs[MAP["Nationality"]].value_counts().idxmax()
-    peak_day = logs[MAP["Day"]].value_counts().idxmax()
-    peak_time = logs[MAP["Time"]].value_counts().idxmax()
-    crowd_sec = logs[MAP["Section"]].value_counts().idxmax()
-    total_billing = logs[MAP["Spend"]].sum()
-    billed_mask = logs[MAP["Spend"]] > 0
-    billed_num = int(billed_mask.sum())
-    billed_amt = float(logs.loc[billed_mask, MAP["Spend"]].sum())
+        # --- Delta KPIs vs Section Avg (simple & business-friendly) ---
+        d1, d2, d3, d4, d5 = st.columns(5)
+        def mk(delta):
+            if pd.isna(delta): return ("–","white")
+            return ("▲","green") if delta >= 0 else ("▼","red")
 
-    fam_mask = logs[MAP["Family"]].isin(["Family","Couple"])
-    fam_items = logs.loc[fam_mask, MAP["Items"]].astype(float).mean() if fam_mask.any() else 0
-    bach_items = logs.loc[~fam_mask, MAP["Items"]].astype(float).mean() if (~fam_mask).any() else 0
-    popular_family_section = (logs.loc[fam_mask, MAP["Section"]].value_counts().idxmax()
-                              if fam_mask.any() else "N/A")
-    popular_bachelor_section = (logs.loc[~fam_mask, MAP["Section"]].value_counts().idxmax()
-                                if (~fam_mask).any() else "N/A")
+        for (label, curr, avg, holder) in [
+            ("Dwell", dwell, sec_avg["dwell"], d1),
+            ("Cashier", cashier, sec_avg["cash"], d2),
+            ("Visit", total_dur, sec_avg["visit"], d3),
+            ("Items", items, sec_avg["items"], d4),
+            ("Spend", spend, sec_avg["spend"], d5),
+        ]:
+            delta = curr - avg if not pd.isna(avg) else np.nan
+            arrow, _ = mk(delta)
+            with holder:
+                st.metric(label, f"{curr:.1f}", f"{arrow} {delta:.1f}" if not pd.isna(delta) else "n/a")
 
-    st.write(
-        f"There were {len(logs)} people from {top_nat} visiting mostly on {peak_day} and {peak_time}. "
-        f"Most crowded the {crowd_sec} section and total billing was {total_billing:,.0f}. "
-        f"Out of these, {billed_num} billed {billed_amt:,.0f}. "
-        f"The remainder were family members or window shoppers."
-    )
-    st.write(
-        f"The {len(logs)} people belonged to age groups like "
-        f"{', '.join(logs[MAP['Age']].value_counts().index.tolist())}. "
-        f"Families bought ~{fam_items:.1f} items (often in {popular_family_section}), "
-        f"while bachelors bought ~{bach_items:.1f} items (often in {popular_bachelor_section}). "
-        f"This customer is predicted '{pred}' with {conf*100:.0f}% confidence."
-    )
+        st.subheader("Benchmarks")
+        bench = pd.DataFrame({
+            "Metric": ["Aisle dwell (min)", "Cashier (min)", "Total visit (min)", "Items", "Spend"],
+            "This Customer": [dwell, cashier, total_dur, items, spend],
+            f"{section} Avg": [sec_avg["dwell"], sec_avg["cash"], sec_avg["visit"], sec_avg["items"], sec_avg["spend"]],
+            f"{section} @ {timeband} Avg": [
+                mean_or_nan(st_df, MAP["Dwell"]), mean_or_nan(st_df, MAP["Cashier"]),
+                mean_or_nan(st_df, MAP["Visit"]), mean_or_nan(st_df, MAP["Items"]),
+                mean_or_nan(st_df, MAP["Spend"]),
+            ],
+        })
+        st.dataframe(
+            bench.style.format({"This Customer":"{:.1f}", f"{section} Avg":"{:.1f}", f"{section} @ {timeband} Avg":"{:.1f}"}),
+            use_container_width=True
+        )
 
-    # ---------- Operational Hint ----------
-    st.subheader("Operational Hint")
-    hint = ""
-    if section == "Women’s Wear" and timeband in ["Evening","Night"]:
-        hint = "Staff senior stylists during evening/night; prepare curated bundles at cashiers."
-    elif section == "Men's Wear" and timeband in ["Afternoon","Evening"]:
-        hint = "Promote formalwear combos; ensure fitting-room throughput."
-    elif section == "Accessories":
-        hint = "Drive small add-ons at checkout; feature travel accessories for tourists."
-    elif section == "Kids":
-        hint = "Weekend play-zone and quick-bill counter reduce drop-offs."
-    else:
-        hint = "Align staffing to observed footfall; keep cashier time under target during peaks."
-    st.info(hint)
+        # Manager Narrative (concise, linked)
+        top_nat = logs[MAP["Nationality"]].value_counts().idxmax()
+        peak_day  = logs[MAP["Day"]].value_counts().idxmax()
+        peak_time = logs[MAP["Time"]].value_counts().idxmax()
+        crowd_sec = logs[MAP["Section"]].value_counts().idxmax()
+        total_billing = logs[MAP["Spend"]].sum()
+        billed_num = int((logs[MAP["Spend"]] > 0).sum())
+        billed_amt = float(logs.loc[logs[MAP["Spend"]] > 0, MAP["Spend"]].sum())
+
+        st.markdown(
+            f"There were **{len(logs)}** people from **{top_nat}** visiting mostly on **{peak_day}** and **{peak_time}**. "
+            f"Most crowded **{crowd_sec}**; total billing **{total_billing:,.0f}**. "
+            f"Out of these, **{billed_num}** billed **{billed_amt:,.0f}**. "
+            f"This customer is **{pred}** with **{conf*100:.0f}%** confidence."
+        )
+
+    # ========== What-If ==========
+    with tab_whatif:
+        st.subheader("What-If Simulator")
+        colL, colR = st.columns(2)
+        with colL:
+            promo = st.slider("Promo (%)", 0, 30, 10, step=5)  # simple uplift on spend
+            staffing = st.selectbox("Extra staffing at cashier?", ["No", "Yes"])
+        with colR:
+            # simulate: promo increases spend; staffing reduces cashier time
+            sim_spend = spend * (1 + promo / 100)
+            sim_cashier = max(0, cashier - (2 if staffing == "Yes" else 0))
+            sim_row = cust.copy()
+            sim_row[MAP["Spend"]] = sim_spend
+            sim_row[MAP["Cashier"]] = sim_cashier
+
+            sim_pred = model.predict(sim_row)[0]
+            sim_proba = model.predict_proba(sim_row)[0]; sim_conf = float(np.max(sim_proba))
+
+            st.info(
+                f"Simulated Result → Type: **{sim_pred}** | Confidence: **{sim_conf*100:.1f}%** "
+                f"(Spend={sim_spend:.0f}, Cashier Time={sim_cashier:.1f}m)"
+            )
+
+        # mini bar to visualize change
+        fig3, ax3 = plt.subplots(figsize=(5, 2.6))
+        ax3.bar(["Spend (now)","Spend (what-if)"], [spend, sim_spend], color=["#4c72b0","#55a868"])
+        ax3.set_title("Promo Impact on Spend"); ax3.set_ylabel("Currency")
+        st.pyplot(fig3)
+
+    # ========== Store Heatmap ==========
+    with tab_heat:
+        st.subheader("Section × Time Heatmap (footfall by count)")
+        grid = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Items"], aggfunc="count").fillna(0)
+        st.dataframe(grid.astype(int), use_container_width=True)
+
+    # ========== Drivers (Global) ==========
+    with tab_drv:
+        st.subheader("What drives the model? (global feature groups)")
+        rf = model.named_steps["rf"]
+        feat_names = model.named_steps["prep"].get_feature_names_out()
+        imps = pd.Series(rf.feature_importances_, index=feat_names)
+
+        # group one-hot back to base features
+        group_map = {
+            MAP["Dwell"]: "Dwell_Aisle_Min",
+            MAP["Cashier"]: "Cashier_Time_Min",
+            MAP["Visit"]: "Visit_Duration_Total_Min",
+            MAP["Items"]: "Items_Purchased",
+            MAP["Spend"]: "Total_Spend",
+            MAP["Discount"]: "Discount_Used",
+            MAP["Repeat"]: "Repeat_Visitor",
+            MAP["Age"]: "Age_Group",
+            MAP["Family"]: "Family_Status",
+            MAP["Resident"]: "Resident_Type",
+            MAP["Nationality"]: "Nationality",
+            MAP["Gender"]: "Gender",
+            MAP["Time"]: "Time_Band",
+            MAP["Day"]: "Day_of_Week",
+            MAP["Section"]: "Section",
+        }
+
+        agg = {}
+        for full_name, val in imps.items():
+            matched = None
+            for raw, nice in group_map.items():
+                if full_name.endswith(raw) or f"__{raw}_" in full_name or full_name.split(":")[0].endswith(raw):
+                    matched = nice; break
+            if matched is None:
+                matched = full_name
+            agg[matched] = agg.get(matched, 0) + val
+
+        drv = pd.Series(agg).sort_values(ascending=False).head(8)
+        st.bar_chart(drv)
+
+    # ========== Save Scenario ==========
+    with tab_save:
+        st.subheader("Save Scenario")
+        snap = cust.copy()
+        snap["Predicted_Type"] = pred
+        snap["Confidence"] = round(conf, 4)
+        snap["Saved_At"] = dt.datetime.now().isoformat(timespec="seconds")
+        st.dataframe(snap, use_container_width=True)
+        st.download_button(
+            "Download this scenario (CSV)",
+            data=snap.to_csv(index=False).encode("utf-8"),
+            file_name="customer_scenario.csv",
+            mime="text/csv",
+        )
 
 # ====================== FOOTER ======================
 st.markdown("---")
-st.caption("Trains a small Random Forest in-app (no pickles). Visuals focus on decisions store managers care about.")
+st.caption("Trains a small Random Forest in-app (no pickles). Tabs: Results • What-If • Heatmap • Drivers • Save.")
