@@ -128,6 +128,16 @@ with c2:
 
 st.markdown("---")
 
+# ========= Simple heatmap helper (matplotlib) =========
+def draw_heatmap(df_matrix, title, cmap="Blues"):
+    fig, ax = plt.subplots(figsize=(6, 3.6))
+    im = ax.imshow(df_matrix.values, aspect="auto", cmap=cmap)
+    ax.set_xticks(range(df_matrix.shape[1])); ax.set_xticklabels(df_matrix.columns, rotation=45, ha="right")
+    ax.set_yticks(range(df_matrix.shape[0])); ax.set_yticklabels(df_matrix.index)
+    ax.set_title(title)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    st.pyplot(fig)
+
 # ====================== PREDICT (ENHANCED + TABS) ======================
 if st.button("Detect Customer Type"):
     cust = pd.DataFrame([{
@@ -175,7 +185,7 @@ if st.button("Detect Customer Type"):
         ax.set_ylabel("Value"); ax.set_title("Single-visit behavior overview")
         st.pyplot(fig)
 
-        # --- Delta KPIs vs Section Avg (simple & business-friendly) ---
+        # --- Delta KPIs vs Section Avg ---
         d1, d2, d3, d4, d5 = st.columns(5)
         def mk(delta):
             if pd.isna(delta): return ("–","white")
@@ -209,7 +219,7 @@ if st.button("Detect Customer Type"):
             use_container_width=True
         )
 
-        # Manager Narrative (concise, linked)
+        # Manager Narrative
         top_nat = logs[MAP["Nationality"]].value_counts().idxmax()
         peak_day  = logs[MAP["Day"]].value_counts().idxmax()
         peak_time = logs[MAP["Time"]].value_counts().idxmax()
@@ -230,10 +240,9 @@ if st.button("Detect Customer Type"):
         st.subheader("What-If Simulator")
         colL, colR = st.columns(2)
         with colL:
-            promo = st.slider("Promo (%)", 0, 30, 10, step=5)  # simple uplift on spend
+            promo = st.slider("Promo (%)", 0, 30, 10, step=5)
             staffing = st.selectbox("Extra staffing at cashier?", ["No", "Yes"])
         with colR:
-            # simulate: promo increases spend; staffing reduces cashier time
             sim_spend = spend * (1 + promo / 100)
             sim_cashier = max(0, cashier - (2 if staffing == "Yes" else 0))
             sim_row = cust.copy()
@@ -248,7 +257,6 @@ if st.button("Detect Customer Type"):
                 f"(Spend={sim_spend:.0f}, Cashier Time={sim_cashier:.1f}m)"
             )
 
-        # mini bar to visualize change
         fig3, ax3 = plt.subplots(figsize=(5, 2.6))
         ax3.bar(["Spend (now)","Spend (what-if)"], [spend, sim_spend], color=["#4c72b0","#55a868"])
         ax3.set_title("Promo Impact on Spend"); ax3.set_ylabel("Currency")
@@ -256,9 +264,29 @@ if st.button("Detect Customer Type"):
 
     # ========== Store Heatmap ==========
     with tab_heat:
-        st.subheader("Section × Time Heatmap (footfall by count)")
-        grid = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Items"], aggfunc="count").fillna(0)
-        st.dataframe(grid.astype(int), use_container_width=True)
+        st.subheader("Section × Time Heatmaps")
+
+        # Order axes for readability
+        time_order = ["Morning","Afternoon","Evening","Night"]
+        # Footfall count
+        grid_count = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
+                                      values=MAP["Items"], aggfunc="count").fillna(0)
+        grid_count = grid_count.reindex(columns=[t for t in time_order if t in grid_count.columns])
+        draw_heatmap(grid_count, "Footfall (visit count)", cmap="Blues")
+
+        # Average Spend
+        grid_spend = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
+                                      values=MAP["Spend"], aggfunc="mean")
+        grid_spend = grid_spend.reindex(columns=[t for t in time_order if t in grid_spend.columns])
+        draw_heatmap(grid_spend.fillna(0), "Average Spend", cmap="Greens")
+
+        # Average Dwell
+        grid_dwell = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
+                                      values=MAP["Dwell"], aggfunc="mean")
+        grid_dwell = grid_dwell.reindex(columns=[t for t in time_order if t in grid_dwell.columns])
+        draw_heatmap(grid_dwell.fillna(0), "Average Aisle Dwell (minutes)", cmap="Oranges")
+
+        st.caption("Use these to align staffing and promotions to the busiest/time-sensitive sections.")
 
     # ========== Drivers (Global) ==========
     with tab_drv:
@@ -267,7 +295,6 @@ if st.button("Detect Customer Type"):
         feat_names = model.named_steps["prep"].get_feature_names_out()
         imps = pd.Series(rf.feature_importances_, index=feat_names)
 
-        # group one-hot back to base features
         group_map = {
             MAP["Dwell"]: "Dwell_Aisle_Min",
             MAP["Cashier"]: "Cashier_Time_Min",
