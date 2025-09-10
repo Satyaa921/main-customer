@@ -1,57 +1,51 @@
 import io
-import datetime as dt
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestClassifier
-
-# ====================== PAGE ======================
-st.set_page_config(page_title="Dubai Retail – Customer Type & Insights", layout="centered")
-st.title("Dubai Retail — Customer Type & Operational Insights")
-st.caption("Enter a shopper’s details → get predicted type, what-if, and visuals managers can act on.")
+# =============== PAGE ===============
+st.set_page_config(page_title="Dubai Retail — Store Heatmaps", layout="wide")
+st.title("Dubai Retail — Store Heatmaps")
+st.caption("Footfall • Spend • Dwell • Cashier • Conversion • Items • Days • Nationalities")
 
 st.markdown("---")
 
-# ====================== OPTIONAL STORE LOGS (for benchmarks & context) ======================
-st.sidebar.header("Store Logs (optional)")
+# =============== DATA LOAD (CSV optional) ===============
+st.sidebar.header("Data")
 upl = st.sidebar.file_uploader("Upload CSV of recent visits (optional)", type=["csv"])
 
 def demo_logs_bytes():
     rows = [
-        # dwell, cashier, total, items, spend, disc, repeat, age, fam, resident, nationality, gender, time, day, section, type
-        [ 8, 2, 18, 0,   0, "No","No","18-25","Bachelor","Tourist","India","Male","Afternoon","Tuesday","Accessories","Low Spender"],
-        [10, 3, 24, 1,  35, "Yes","No","18-25","Bachelor","Resident","UAE","Male","Evening","Monday","Men's Wear","Low Spender"],
-        [16, 4, 38, 2, 110, "Yes","Yes","26-35","Family","Resident","Philippines","Female","Evening","Thursday","Women’s Wear","Medium Buyer"],
-        [18, 5, 42, 3, 140, "No","Yes","26-35","Family","Resident","India","Female","Night","Friday","Women’s Wear","Medium Buyer"],
-        [20, 4, 55, 3, 220, "Yes","No","36-50","Couple","Resident","Pakistan","Male","Afternoon","Saturday","Men's Wear","High Spender"],
-        [22, 6, 60, 4, 260, "No","Yes","36-50","Couple","Resident","UAE","Male","Evening","Saturday","Women’s Wear","High Spender"],
-        [28, 7, 85, 4, 350, "Yes","Yes","36-50","Family","Tourist","Saudi Arabia","Female","Night","Thursday","Women’s Wear","Premium Buyer"],
-        [30, 8, 90, 5, 420, "Yes","Yes","51+","Family","Tourist","UK","Female","Night","Friday","Accessories","Premium Buyer"],
-        [14, 3, 32, 2, 120, "No","Yes","26-35","Couple","Resident","Egypt","Male","Morning","Sunday","Kids","Medium Buyer"],
-        [25, 4, 58, 3, 230, "Yes","Yes","36-50","Family","Resident","India","Female","Evening","Sunday","Women’s Wear","High Spender"],
-        [ 6, 1, 15, 0,   0, "No","No","18-25","Bachelor","Tourist","Pakistan","Male","Morning","Wednesday","Kids","Low Spender"],
-        [12, 2, 28, 1,  60, "Yes","No","26-35","Couple","Resident","Philippines","Female","Afternoon","Tuesday","Accessories","Low Spender"],
-        [22, 5, 62, 3, 240, "Yes","Yes","36-50","Couple","Resident","UAE","Female","Evening","Friday","Men's Wear","High Spender"],
-        [26, 6, 76, 4, 320, "No","Yes","36-50","Family","Resident","India","Male","Evening","Thursday","Women’s Wear","High Spender"],
+        # dwell, cashier, visit, items, spend, disc, repeat, age, fam, resident, nationality, gender, time, day, section
+        [ 8,2,18,0,  0,"No","No","18-25","Bachelor","Tourist","India","Male","Afternoon","Tuesday","Accessories"],
+        [10,3,24,1, 35,"Yes","No","18-25","Bachelor","Resident","UAE","Male","Evening","Monday","Men's Wear"],
+        [16,4,38,2,110,"Yes","Yes","26-35","Family","Resident","Philippines","Female","Evening","Thursday","Women’s Wear"],
+        [18,5,42,3,140,"No","Yes","26-35","Family","Resident","India","Female","Night","Friday","Women’s Wear"],
+        [20,4,55,3,220,"Yes","No","36-50","Couple","Resident","Pakistan","Male","Afternoon","Saturday","Men's Wear"],
+        [22,6,60,4,260,"No","Yes","36-50","Couple","Resident","UAE","Male","Evening","Saturday","Women’s Wear"],
+        [28,7,85,4,350,"Yes","Yes","36-50","Family","Tourist","Saudi Arabia","Female","Night","Thursday","Women’s Wear"],
+        [30,8,90,5,420,"Yes","Yes","51+","Family","Tourist","UK","Female","Night","Friday","Accessories"],
+        [14,3,32,2,120,"No","Yes","26-35","Couple","Resident","Egypt","Male","Morning","Sunday","Kids"],
+        [25,4,58,3,230,"Yes","Yes","36-50","Family","Resident","India","Female","Evening","Sunday","Women’s Wear"],
+        [ 6,1,15,0,  0,"No","No","18-25","Bachelor","Tourist","Pakistan","Male","Morning","Wednesday","Kids"],
+        [12,2,28,1, 60,"Yes","No","26-35","Couple","Resident","Philippines","Female","Afternoon","Tuesday","Accessories"],
+        [22,5,62,3,240,"Yes","Yes","36-50","Couple","Resident","UAE","Female","Evening","Friday","Men's Wear"],
+        [26,6,76,4,320,"No","Yes","36-50","Family","Resident","India","Male","Evening","Thursday","Women’s Wear"],
     ]
     cols = ["Dwell_Aisle_Min","Cashier_Time_Min","Visit_Duration_Total_Min","Items_Purchased","Total_Spend",
             "Discount_Used","Repeat_Visitor","Age_Group","Family_Status","Resident_Type","Nationality",
-            "Gender","Time_Band","Day_of_Week","Section","Purchase_Type"]
+            "Gender","Time_Band","Day_of_Week","Section"]
     df = pd.DataFrame(rows, columns=cols)
     buf = io.BytesIO(); df.to_csv(buf, index=False); return buf.getvalue()
 
 if upl:
     logs = pd.read_csv(upl)
 else:
-    st.info("No logs uploaded — using a small Dubai demo log for benchmarks and context.")
+    st.info("No file uploaded — using a small Dubai demo log. Upload your CSV to power these heatmaps with real data.")
     logs = pd.read_csv(io.BytesIO(demo_logs_bytes()))
 
-# -------- soft column mapping so your CSV can have slightly different names --------
+# =============== FLEXIBLE COLUMN MAP ===============
 def pick(df, candidates):
     for c in candidates:
         if c in df.columns:
@@ -64,283 +58,137 @@ MAP = {
     "Visit": pick(logs, ["Visit_Duration_Total_Min","Total_Visit_Min"]),
     "Items": pick(logs, ["Items_Purchased","Items"]),
     "Spend": pick(logs, ["Total_Spend","Bill_Amount"]),
-    "Discount": pick(logs, ["Discount_Used"]),
-    "Repeat": pick(logs, ["Repeat_Visitor"]),
-    "Age": pick(logs, ["Age_Group","AgeBucket"]),
-    "Family": pick(logs, ["Family_Status"]),
-    "Resident": pick(logs, ["Resident_Type"]),
     "Nationality": pick(logs, ["Nationality","Country"]),
-    "Gender": pick(logs, ["Gender"]),
     "Time": pick(logs, ["Time_Band","TimeBand"]),
     "Day": pick(logs, ["Day_of_Week","Day"]),
     "Section": pick(logs, ["Section","Aisle_Section"]),
-    "Type": pick(logs, ["Purchase_Type","Segment"])
 }
 
-REQUIRED = ["Dwell","Cashier","Visit","Items","Spend","Discount","Repeat","Age","Family","Resident","Nationality","Gender","Time","Day","Section","Type"]
-if any(MAP[k] is None for k in REQUIRED):
-    st.error("Your logs are missing required columns (or names differ too much). Expected: "
-             "dwell, cashier, visit, items, spend, discount, repeat, age, family, resident, nationality, gender, time, day, section, type.")
+REQUIRED = ["Dwell","Cashier","Visit","Items","Spend","Nationality","Time","Day","Section"]
+missing = [k for k in REQUIRED if MAP[k] is None]
+if missing:
+    st.error(f"Your data is missing required columns (or names differ too much): {missing}")
     st.stop()
 
-# ====================== TRAIN MODEL IN-APP ======================
-NUM = [MAP["Dwell"], MAP["Cashier"], MAP["Visit"], MAP["Items"], MAP["Spend"]]
-CAT = [MAP["Discount"], MAP["Repeat"], MAP["Age"], MAP["Family"], MAP["Resident"],
-       MAP["Nationality"], MAP["Gender"], MAP["Time"], MAP["Day"], MAP["Section"]]
-TARGET = MAP["Type"]
+# =============== FILTERS ===============
+st.sidebar.header("Filters")
+days_order = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+time_order = ["Morning","Afternoon","Evening","Night"]
 
-X = logs[NUM + CAT]
-y = logs[TARGET]
+countries = ["All"] + sorted(logs[MAP["Nationality"]].dropna().unique().tolist())
+sections  = ["All"] + sorted(logs[MAP["Section"]].dropna().unique().tolist())
+days      = ["All"] + days_order
+times     = ["All"] + time_order
 
-preprocess = ColumnTransformer([
-    ("num", StandardScaler(), NUM),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), CAT)
-])
-model = Pipeline([("prep", preprocess), ("rf", RandomForestClassifier(n_estimators=200, random_state=42))])
-model.fit(X, y)
+f_country = st.sidebar.selectbox("Nationality", countries, index=0)
+f_section = st.sidebar.selectbox("Section", sections, index=0)
+f_day     = st.sidebar.selectbox("Day of Week", days, index=0)
+f_time    = st.sidebar.selectbox("Time Band", times, index=0)
 
-# ====================== INPUTS ======================
-st.subheader("Enter Customer Details")
+F = logs.copy()
+if f_country != "All": F = F[F[MAP["Nationality"]]==f_country]
+if f_section != "All": F = F[F[MAP["Section"]]==f_section]
+if f_day != "All":     F = F[F[MAP["Day"]]==f_day]
+if f_time != "All":    F = F[F[MAP["Time"]]==f_time]
 
-NATIONS = sorted(logs[MAP["Nationality"]].dropna().unique().tolist()) or ["UAE","India","Pakistan","Philippines","Saudi Arabia","Egypt","UK"]
-TIME_BANDS = ["Morning","Afternoon","Evening","Night"]
-DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
-SECTIONS = sorted(logs[MAP["Section"]].dropna().unique().tolist()) or ["Men's Wear","Women’s Wear","Kids","Accessories"]
+if F.empty:
+    st.warning("No rows match current filters.")
+    st.stop()
 
-c1, c2 = st.columns(2)
-with c1:
-    dwell = st.slider("Aisle dwell (minutes)", 0, 120, 18)
-    cashier = st.slider("Cashier time (minutes)", 0, 30, 4)
-    total_dur = st.slider("Total visit duration (minutes)", 0, 240, 45)
-    items = st.number_input("Items purchased", 0, 20, 3)
-    spend = st.number_input("Total spend", 0, 4000, 150, step=10)
-with c2:
-    disc = st.selectbox("Discount used", ["Yes","No"], index=0)
-    repeat = st.selectbox("Repeat visitor", ["Yes","No"], index=1)
-    age = st.selectbox("Age group", ["18-25","26-35","36-50","51+"], index=1)
-    fam = st.selectbox("Family status", ["Bachelor","Couple","Family"], index=2)
-    resident = st.selectbox("Resident type", ["Resident","Tourist"], index=0)
-    gender = st.selectbox("Gender", ["Male","Female"], index=0)
-    nation = st.selectbox("Nationality", NATIONS, index=min(1, len(NATIONS)-1))
-    timeband = st.selectbox("Time band", TIME_BANDS, index=2)
-    day = st.selectbox("Day of week", DAYS, index=4)
-    section = st.selectbox("Section visited", SECTIONS, index=min(1, len(SECTIONS)-1))
+# =============== KPIs ===============
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Rows", f"{len(F):,}")
+k2.metric("Total Billing", f"{F[MAP['Spend']].sum():,.0f}")
+k3.metric("Avg Dwell (min)", f"{F[MAP['Dwell']].mean():.1f}")
+k4.metric("Avg Cashier (min)", f"{F[MAP['Cashier']].mean():.1f}")
+k5.metric("Avg Items", f"{F[MAP['Items']].mean():.1f}")
 
 st.markdown("---")
 
-# ========= Simple heatmap helper (matplotlib) =========
-def draw_heatmap(df_matrix, title, cmap="Blues"):
-    fig, ax = plt.subplots(figsize=(6, 3.6))
+# =============== Heatmap Helper ===============
+def draw_heatmap(df_matrix, title, cmap="Blues", fmt="{:.0f}"):
+    if df_matrix.empty:
+        st.info(f"No data for: {title}")
+        return
+    # ensure ordering of columns/rows looks nice
+    fig, ax = plt.subplots(figsize=(7, 4))
     im = ax.imshow(df_matrix.values, aspect="auto", cmap=cmap)
     ax.set_xticks(range(df_matrix.shape[1])); ax.set_xticklabels(df_matrix.columns, rotation=45, ha="right")
     ax.set_yticks(range(df_matrix.shape[0])); ax.set_yticklabels(df_matrix.index)
     ax.set_title(title)
-    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    # annotate cells (light touch for readability)
+    for i in range(df_matrix.shape[0]):
+        for j in range(df_matrix.shape[1]):
+            val = df_matrix.values[i, j]
+            ax.text(j, i, (fmt.format(val) if pd.notna(val) else ""), ha="center", va="center", fontsize=8, color="black")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     st.pyplot(fig)
 
-# ====================== PREDICT (ENHANCED + TABS) ======================
-if st.button("Detect Customer Type"):
-    cust = pd.DataFrame([{
-        MAP["Dwell"]: dwell, MAP["Cashier"]: cashier, MAP["Visit"]: total_dur,
-        MAP["Items"]: items, MAP["Spend"]: spend, MAP["Discount"]: disc, MAP["Repeat"]: repeat,
-        MAP["Age"]: age, MAP["Family"]: fam, MAP["Resident"]: resident, MAP["Nationality"]: nation,
-        MAP["Gender"]: gender, MAP["Time"]: timeband, MAP["Day"]: day, MAP["Section"]: section
-    }])
+# =============== HEATMAPS ===============
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "Footfall (Section × Time)",
+    "Average Spend (Section × Time)",
+    "Average Dwell (Section × Time)",
+    "Average Cashier (Section × Time)",
+    "Conversion Rate (Section × Time)",
+    "Items per Visit (Section × Time)",
+    "Footfall (Section × Day)",
+    "Nationalities (Section × Country)"
+])
 
-    pred = model.predict(cust)[0]
-    proba = model.predict_proba(cust)[0]; conf = float(np.max(proba))
+# 1) Footfall count (Section × Time)
+with tab1:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Items"], aggfunc="count").fillna(0)
+    # order axis
+    grid = grid.reindex(columns=[t for t in time_order if t in grid.columns])
+    draw_heatmap(grid.astype(int), "Footfall (visit count) — Section × Time", cmap="Blues", fmt="{:.0f}")
 
-    st.success(f"Predicted Customer Type: {pred}  |  Confidence: {conf*100:.1f}%")
+# 2) Average Spend (Section × Time)
+with tab2:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Spend"], aggfunc="mean")
+    grid = grid.reindex(columns=[t for t in time_order if t in grid.columns])
+    draw_heatmap(grid.fillna(0), "Average Spend — Section × Time", cmap="Greens", fmt="{:.0f}")
 
-    # --- Benchmarks for deltas ---
-    sec_df = logs[logs[MAP["Section"]] == section]
-    st_df  = logs[(logs[MAP["Section"]] == section) & (logs[MAP["Time"]] == timeband)]
+# 3) Average Dwell (Section × Time)
+with tab3:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Dwell"], aggfunc="mean")
+    grid = grid.reindex(columns=[t for t in time_order if t in grid.columns])
+    draw_heatmap(grid.fillna(0), "Average Aisle Dwell (minutes) — Section × Time", cmap="Oranges", fmt="{:.1f}")
 
-    def mean_or_nan(d, col):
-        try:
-            return float(d[col].astype(float).mean())
-        except Exception:
-            return float("nan")
+# 4) Average Cashier (Section × Time)
+with tab4:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Cashier"], aggfunc="mean")
+    grid = grid.reindex(columns=[t for t in time_order if t in grid.columns])
+    draw_heatmap(grid.fillna(0), "Average Cashier Time (minutes) — Section × Time", cmap="Purples", fmt="{:.1f}")
 
-    sec_avg = {
-        "dwell": mean_or_nan(sec_df, MAP["Dwell"]),
-        "cash":  mean_or_nan(sec_df, MAP["Cashier"]),
-        "visit": mean_or_nan(sec_df, MAP["Visit"]),
-        "items": mean_or_nan(sec_df, MAP["Items"]),
-        "spend": mean_or_nan(sec_df, MAP["Spend"]),
-    }
+# 5) Conversion Rate (Section × Time): share of visits with spend > 0
+with tab5:
+    def conv_rate(df):
+        grp = df.groupby([MAP["Section"], MAP["Time"]])
+        num = grp.apply(lambda d: (d[MAP["Spend"]] > 0).mean() if len(d) else np.nan)
+        return num.unstack().reindex(columns=[t for t in time_order if t in num.unstack().columns])
+    grid = conv_rate(F) * 100
+    draw_heatmap(grid.fillna(0), "Conversion Rate % — Section × Time", cmap="Reds", fmt="{:.0f}")
 
-    # ---------- Tabs: Results | What-If | Store Heatmap | Drivers | Save Scenario ----------
-    tab_res, tab_whatif, tab_heat, tab_drv, tab_save = st.tabs(
-        ["Results", "What-If", "Store Heatmap", "Drivers", "Save Scenario"]
-    )
+# 6) Items per Visit (Section × Time)
+with tab6:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Time"], values=MAP["Items"], aggfunc="mean")
+    grid = grid.reindex(columns=[t for t in time_order if t in grid.columns])
+    draw_heatmap(grid.fillna(0), "Average Items per Visit — Section × Time", cmap="BuPu", fmt="{:.1f}")
 
-    # ========== Results ==========
-    with tab_res:
-        st.subheader("Customer Behavior")
-        fig, ax = plt.subplots(figsize=(5, 3))
-        vals = [dwell, cashier, total_dur, items, spend]
-        labels = ["Aisle dwell", "Cashier time", "Total visit", "Items", "Spend"]
-        ax.bar(labels, vals, color=["#4c72b0", "#55a868", "#c44e52", "#8172b2", "#937860"])
-        ax.set_ylabel("Value"); ax.set_title("Single-visit behavior overview")
-        st.pyplot(fig)
+# 7) Footfall (Section × Day)
+with tab7:
+    grid = F.pivot_table(index=MAP["Section"], columns=MAP["Day"], values=MAP["Items"], aggfunc="count").fillna(0)
+    grid = grid.reindex(columns=[d for d in days_order if d in grid.columns])
+    draw_heatmap(grid.astype(int), "Footfall (visit count) — Section × Day", cmap="Blues", fmt="{:.0f}")
 
-        # --- Delta KPIs vs Section Avg ---
-        d1, d2, d3, d4, d5 = st.columns(5)
-        def mk(delta):
-            if pd.isna(delta): return ("–","white")
-            return ("▲","green") if delta >= 0 else ("▼","red")
+# 8) Nationalities (Section × Country) — top N countries
+with tab8:
+    topN = st.slider("Top N countries", 3, 12, 6, step=1)
+    top_countries = F[MAP["Nationality"]].value_counts().head(topN).index.tolist()
+    F2 = F[F[MAP["Nationality"]].isin(top_countries)]
+    grid = F2.pivot_table(index=MAP["Section"], columns=MAP["Nationality"], values=MAP["Items"], aggfunc="count").fillna(0)
+    draw_heatmap(grid.astype(int), f"Footfall (count) — Section × Top {topN} Nationalities", cmap="Greens", fmt="{:.0f}")
 
-        for (label, curr, avg, holder) in [
-            ("Dwell", dwell, sec_avg["dwell"], d1),
-            ("Cashier", cashier, sec_avg["cash"], d2),
-            ("Visit", total_dur, sec_avg["visit"], d3),
-            ("Items", items, sec_avg["items"], d4),
-            ("Spend", spend, sec_avg["spend"], d5),
-        ]:
-            delta = curr - avg if not pd.isna(avg) else np.nan
-            arrow, _ = mk(delta)
-            with holder:
-                st.metric(label, f"{curr:.1f}", f"{arrow} {delta:.1f}" if not pd.isna(delta) else "n/a")
-
-        st.subheader("Benchmarks")
-        bench = pd.DataFrame({
-            "Metric": ["Aisle dwell (min)", "Cashier (min)", "Total visit (min)", "Items", "Spend"],
-            "This Customer": [dwell, cashier, total_dur, items, spend],
-            f"{section} Avg": [sec_avg["dwell"], sec_avg["cash"], sec_avg["visit"], sec_avg["items"], sec_avg["spend"]],
-            f"{section} @ {timeband} Avg": [
-                mean_or_nan(st_df, MAP["Dwell"]), mean_or_nan(st_df, MAP["Cashier"]),
-                mean_or_nan(st_df, MAP["Visit"]), mean_or_nan(st_df, MAP["Items"]),
-                mean_or_nan(st_df, MAP["Spend"]),
-            ],
-        })
-        st.dataframe(
-            bench.style.format({"This Customer":"{:.1f}", f"{section} Avg":"{:.1f}", f"{section} @ {timeband} Avg":"{:.1f}"}),
-            use_container_width=True
-        )
-
-        # Manager Narrative
-        top_nat = logs[MAP["Nationality"]].value_counts().idxmax()
-        peak_day  = logs[MAP["Day"]].value_counts().idxmax()
-        peak_time = logs[MAP["Time"]].value_counts().idxmax()
-        crowd_sec = logs[MAP["Section"]].value_counts().idxmax()
-        total_billing = logs[MAP["Spend"]].sum()
-        billed_num = int((logs[MAP["Spend"]] > 0).sum())
-        billed_amt = float(logs.loc[logs[MAP["Spend"]] > 0, MAP["Spend"]].sum())
-
-        st.markdown(
-            f"There were **{len(logs)}** people from **{top_nat}** visiting mostly on **{peak_day}** and **{peak_time}**. "
-            f"Most crowded **{crowd_sec}**; total billing **{total_billing:,.0f}**. "
-            f"Out of these, **{billed_num}** billed **{billed_amt:,.0f}**. "
-            f"This customer is **{pred}** with **{conf*100:.0f}%** confidence."
-        )
-
-    # ========== What-If ==========
-    with tab_whatif:
-        st.subheader("What-If Simulator")
-        colL, colR = st.columns(2)
-        with colL:
-            promo = st.slider("Promo (%)", 0, 30, 10, step=5)
-            staffing = st.selectbox("Extra staffing at cashier?", ["No", "Yes"])
-        with colR:
-            sim_spend = spend * (1 + promo / 100)
-            sim_cashier = max(0, cashier - (2 if staffing == "Yes" else 0))
-            sim_row = cust.copy()
-            sim_row[MAP["Spend"]] = sim_spend
-            sim_row[MAP["Cashier"]] = sim_cashier
-
-            sim_pred = model.predict(sim_row)[0]
-            sim_proba = model.predict_proba(sim_row)[0]; sim_conf = float(np.max(sim_proba))
-
-            st.info(
-                f"Simulated Result → Type: **{sim_pred}** | Confidence: **{sim_conf*100:.1f}%** "
-                f"(Spend={sim_spend:.0f}, Cashier Time={sim_cashier:.1f}m)"
-            )
-
-        fig3, ax3 = plt.subplots(figsize=(5, 2.6))
-        ax3.bar(["Spend (now)","Spend (what-if)"], [spend, sim_spend], color=["#4c72b0","#55a868"])
-        ax3.set_title("Promo Impact on Spend"); ax3.set_ylabel("Currency")
-        st.pyplot(fig3)
-
-    # ========== Store Heatmap ==========
-    with tab_heat:
-        st.subheader("Section × Time Heatmaps")
-
-        # Order axes for readability
-        time_order = ["Morning","Afternoon","Evening","Night"]
-        # Footfall count
-        grid_count = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
-                                      values=MAP["Items"], aggfunc="count").fillna(0)
-        grid_count = grid_count.reindex(columns=[t for t in time_order if t in grid_count.columns])
-        draw_heatmap(grid_count, "Footfall (visit count)", cmap="Blues")
-
-        # Average Spend
-        grid_spend = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
-                                      values=MAP["Spend"], aggfunc="mean")
-        grid_spend = grid_spend.reindex(columns=[t for t in time_order if t in grid_spend.columns])
-        draw_heatmap(grid_spend.fillna(0), "Average Spend", cmap="Greens")
-
-        # Average Dwell
-        grid_dwell = logs.pivot_table(index=MAP["Section"], columns=MAP["Time"],
-                                      values=MAP["Dwell"], aggfunc="mean")
-        grid_dwell = grid_dwell.reindex(columns=[t for t in time_order if t in grid_dwell.columns])
-        draw_heatmap(grid_dwell.fillna(0), "Average Aisle Dwell (minutes)", cmap="Oranges")
-
-        st.caption("Use these to align staffing and promotions to the busiest/time-sensitive sections.")
-
-    # ========== Drivers (Global) ==========
-    with tab_drv:
-        st.subheader("What drives the model? (global feature groups)")
-        rf = model.named_steps["rf"]
-        feat_names = model.named_steps["prep"].get_feature_names_out()
-        imps = pd.Series(rf.feature_importances_, index=feat_names)
-
-        group_map = {
-            MAP["Dwell"]: "Dwell_Aisle_Min",
-            MAP["Cashier"]: "Cashier_Time_Min",
-            MAP["Visit"]: "Visit_Duration_Total_Min",
-            MAP["Items"]: "Items_Purchased",
-            MAP["Spend"]: "Total_Spend",
-            MAP["Discount"]: "Discount_Used",
-            MAP["Repeat"]: "Repeat_Visitor",
-            MAP["Age"]: "Age_Group",
-            MAP["Family"]: "Family_Status",
-            MAP["Resident"]: "Resident_Type",
-            MAP["Nationality"]: "Nationality",
-            MAP["Gender"]: "Gender",
-            MAP["Time"]: "Time_Band",
-            MAP["Day"]: "Day_of_Week",
-            MAP["Section"]: "Section",
-        }
-
-        agg = {}
-        for full_name, val in imps.items():
-            matched = None
-            for raw, nice in group_map.items():
-                if full_name.endswith(raw) or f"__{raw}_" in full_name or full_name.split(":")[0].endswith(raw):
-                    matched = nice; break
-            if matched is None:
-                matched = full_name
-            agg[matched] = agg.get(matched, 0) + val
-
-        drv = pd.Series(agg).sort_values(ascending=False).head(8)
-        st.bar_chart(drv)
-
-    # ========== Save Scenario ==========
-    with tab_save:
-        st.subheader("Save Scenario")
-        snap = cust.copy()
-        snap["Predicted_Type"] = pred
-        snap["Confidence"] = round(conf, 4)
-        snap["Saved_At"] = dt.datetime.now().isoformat(timespec="seconds")
-        st.dataframe(snap, use_container_width=True)
-        st.download_button(
-            "Download this scenario (CSV)",
-            data=snap.to_csv(index=False).encode("utf-8"),
-            file_name="customer_scenario.csv",
-            mime="text/csv",
-        )
-
-# ====================== FOOTER ======================
 st.markdown("---")
-st.caption("Trains a small Random Forest in-app (no pickles). Tabs: Results • What-If • Heatmap • Drivers • Save.")
+st.caption("Tip: Use the sidebar filters (Country/Section/Day/Time). All heatmaps update instantly. Align staffing and promotions to high footfall, high spend, and long-dwell cells.")
